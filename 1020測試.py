@@ -154,46 +154,57 @@ st.markdown("""
 # ==============================================================================
 # 3. 全台股票清單自動抓取與 ETF 費用表快取
 # ==============================================================================
-@st.cache_data(ttl=86400)  # 快取 24 小時，避免頻繁請求證交所
+import requests
+from io import StringIO
+
+@st.cache_data(ttl=86400)  # 快取 24 小時
 def get_all_taiwan_stocks() -> dict:
     """自動從證交所抓取最新全台股 (上市+上櫃) 代碼與名稱對照表"""
     stocks = {}
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
     
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    
+    session = requests.Session()
+    session.headers.update(headers)
+
     # 1. 抓取上市股票清單 (strMode=2)
     try:
-        req_twse = urllib.request.Request("https://isin.twse.com.tw/isin/C_public.jsp?strMode=2", headers=headers)
-        with urllib.request.urlopen(req_twse, timeout=5) as resp:
-            html_twse = resp.read().decode('cp950', errors='ignore')
-            dfs_twse = pd.read_html(html_twse)
-            if dfs_twse:
-                df_twse = dfs_twse[0]
-                for val in df_twse.iloc[1:, 0].dropna():
-                    parts = str(val).split()
-                    if len(parts) >= 2 and parts[0].isdigit():
-                        stocks[parts[0]] = parts[1]
-    except Exception:
-        pass
+        resp_twse = session.get("https://isin.twse.com.tw/isin/C_public.jsp?strMode=2", timeout=15)
+        resp_twse.encoding = 'cp950'
+        dfs_twse = pd.read_html(StringIO(resp_twse.text))
+        if dfs_twse:
+            df_twse = dfs_twse[0]
+            for val in df_twse.iloc[1:, 0].dropna():
+                parts = str(val).split()
+                if len(parts) >= 2 and parts[0].isdigit():
+                    stocks[parts[0]] = parts[1]
+    except Exception as e:
+        print(f"TWSE fetch error: {e}")
 
     # 2. 抓取上櫃股票清單 (strMode=4)
     try:
-        req_tpex = urllib.request.Request("https://isin.twse.com.tw/isin/C_public.jsp?strMode=4", headers=headers)
-        with urllib.request.urlopen(req_tpex, timeout=5) as resp:
-            html_tpex = resp.read().decode('cp950', errors='ignore')
-            dfs_tpex = pd.read_html(html_tpex)
-            if dfs_tpex:
-                df_tpex = dfs_tpex[0]
-                for val in df_tpex.iloc[1:, 0].dropna():
-                    parts = str(val).split()
-                    if len(parts) >= 2 and parts[0].isdigit():
-                        stocks[parts[0]] = parts[1]
-    except Exception:
-        pass
+        resp_tpex = session.get("https://isin.twse.com.tw/isin/C_public.jsp?strMode=4", timeout=15)
+        resp_tpex.encoding = 'cp950'
+        dfs_tpex = pd.read_html(StringIO(resp_tpex.text))
+        if dfs_tpex:
+            df_tpex = dfs_tpex[0]
+            for val in df_tpex.iloc[1:, 0].dropna():
+                parts = str(val).split()
+                if len(parts) >= 2 and parts[0].isdigit():
+                    stocks[parts[0]] = parts[1]
+    except Exception as e:
+        print(f"TPEX fetch error: {e}")
 
+    # 若全數失敗，使用保底熱門清單
     if not stocks:
         stocks = {"2330": "台積電", "2317": "鴻海", "2454": "聯發科", "0050": "元大台灣50"}
 
     return stocks
+
 
 # 初始化載入全市場股票字典
 ALL_STOCKS = get_all_taiwan_stocks()
