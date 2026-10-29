@@ -5,4 +5,4 @@ plotly
 yfinance
 requests
 google-genai
-
+lxml
